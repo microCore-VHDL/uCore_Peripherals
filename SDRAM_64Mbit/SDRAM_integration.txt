@@ -11,6 +11,18 @@ On cell architectures, this should be 21, on byte architectures 22, on a
 16 bit architecture it must be 16, because you can only use a fraction
 of the SDRAM capacity.
 
+under -- uCore subtype and record definitions
+add:
+
+   TYPE  SDRAM_signals  IS RECORD
+      cke         : STD_LOGIC;             --                           3     2     1    0
+      cmd         : UNSIGNED( 3 DOWNTO 0); -- combines SDRAM inputs: | cs | ras | cas | we |
+      addr        : UNSIGNED(11 DOWNTO 0);
+      bank        : UNSIGNED( 1 DOWNTO 0);
+      byte_en     : UNSIGNED( 1 DOWNTO 0); -- byte_en = NOT dqm
+      rdata       : data_bus;
+   END RECORD;
+   
 -- ---------------------------------------------------------------------
 -- fpga.vhd
 -- ---------------------------------------------------------------------
