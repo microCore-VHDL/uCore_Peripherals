@@ -1,0 +1,165 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!! Note: This code requires a data_width of at least 18 bits       !!
+!! To get this going on a 16 bit system needs some adaptation work !!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+Add eeprom.vhd to both the simulator's and the synthesizer's file list.
+
+-- ---------------------------------------------------------------------
+-- architecture_pkg(_sim).vhd
+-- ---------------------------------------------------------------------
+
+-- Add control bit definitions under CTRL_REG:
+
+      CONSTANT c_rom           : NATURAL := __; -- write protect for program memory image in serial EEprom
+      CONSTANT c_wp            : NATURAL := __; -- write protect pin on serial EEprom
+
+   Update ctrl_width !!
+
+-- ADD three Registers. They MUST be consecutive and remain in this order!
+
+   CONSTANT EE_ADR_REG            : INTEGER := -__; -- address register
+   CONSTANT EE_DAT_REG            : INTEGER := -__; -- streaming data byte register
+   CONSTANT EE_END_REG            : INTEGER := -__; -- final data byte register
+
+   Update min_registers !!
+
+-- ---------------------------------------------------------------------
+-- fpga.vhd
+-- ---------------------------------------------------------------------
+
+-- add IO-pins to the ENTITY declaration:
+
+-- E2prom
+   ee_sda      : INOUT STD_LOGIC;
+   ee_scl      : OUT   STD_LOGIC;
+   ee_wp       : OUT   STD_LOGIC;
+
+-- add to declarations:
+
+COMPONENT eeprom PORT (
+   uBus       : IN    uBus_port;
+   ee_pause   : OUT   STD_LOGIC;
+   ee_scl     : OUT   STD_LOGIC;
+   ee_sda     : INOUT STD_LOGIC;
+   ee_data    : OUT   byte
+); END COMPONENT eeprom;
+
+SIGNAL ee_pause  : STD_LOGIC; 
+SIGNAL ee_data   : byte;
+
+-- add to the body:
+
+ee_wp <= ctrl(c_wp);
+
+serial_eeprom: eeprom
+PORT MAP (
+   uBus        => uBus,
+   ee_pause    => ee_pause,
+   ee_scl      => ee_scl,
+   ee_sda      => ee_sda,
+   ee_data     => ee_data
+);
+
+uBus.sources(EE_ADR_REG) <= (OTHERS => '0');
+uBus.sources(EE_DAT_REG) <= resize(ee_data, data_width);
+uBus.sources(EE_END_REG) <= resize(ee_data, data_width);
+
+uBus.pause <= ee_pause OR <ored-list of pause signals>;
+
+-- add to the synchronous and asynchronous reset clause of ctrl_proc:
+
+   ctrl(c_rom) <= '1'; -- boot with write protect above #boot-mem
+
+-- ---------------------------------------------------------------------
+-- bench.vhd
+-- ---------------------------------------------------------------------
+
+-- add IO-pins to the 'COMPONENT fpga' declaration:
+
+-- E2prom
+   ee_sda      : INOUT STD_LOGIC;
+   ee_scl      : OUT   STD_LOGIC;
+   ee_wp       : OUT   STD_LOGIC;
+
+-- add to declarations:
+
+SIGNAL ee_scl       : STD_LOGIC;
+SIGNAL ee_sda       : STD_LOGIC;
+SIGNAL ee_wp        : STD_LOGIC;
+SIGNAL sda_in       : STD_LOGIC;
+SIGNAL sda_start    : STD_LOGIC;
+SIGNAL ee_cnt       : NATURAL RANGE 0 TO 8;
+SIGNAL ee_data      : byte;
+SIGNAL writing      : STD_LOGIC;
+
+-- add to the body:
+
+sda_in <= to_X01(ee_sda);
+
+e2prom_proc : PROCESS
+BEGIN
+  writing <= '0';
+  WAIT FOR 1 ns;
+  LOOP
+     ee_sda <= 'H';
+     ee_data <= (OTHERS => '0');
+     WAIT FOR 1 ns;
+     WHILE  ee_scl = '0'  LOOP  WAIT FOR 5 ns; END LOOP; -- wait until scl high
+     sda_start <= sda_in;
+     WAIT FOR 1 ns;
+     WHILE  ee_scl = '1' AND sda_start = sda_in  LOOP  WAIT FOR 5 ns;  END LOOP;
+     IF  sda_start = '1' AND sda_in = '0'  THEN   -- start
+        WAIT UNTIL falling_edge(ee_scl);
+        FOR i IN 7 DOWNTO 0 LOOP
+           WAIT UNTIL falling_edge(ee_scl);
+           ee_data(i) <= sda_in;
+        END LOOP;
+        WAIT FOR 200 ns;
+        ee_sda <= writing;
+        WAIT UNTIL falling_edge(ee_scl);
+        WAIT FOR 100 ns;
+     ELSIF  sda_start = sda_in  THEN  -- not a stop
+        ee_data(7) <= sda_start;
+        FOR i IN 6 DOWNTO 0 LOOP
+           WAIT UNTIL falling_edge(ee_scl);
+           ee_data(i) <= sda_in;
+        END LOOP;
+        WAIT FOR 200 ns;
+        ee_sda <= writing;
+        WAIT UNTIL falling_edge(ee_scl);
+        WAIT FOR 100 ns;
+     ELSE  -- this was a stop
+        writing <= '1', '0' AFTER 20 us;
+     END IF;
+  END LOOP;
+END PROCESS e2prom_proc;
+
+-- add to the body's fpga instanciation:
+
+-- E2prom
+   ee_scl     => ee_scl,
+   ee_sda     => ee_sda,
+   ee_wp      => ee_wp,
+
+-- ---------------------------------------------------------------------
+-- constants.fs, add to 'registers and bits'
+-- ---------------------------------------------------------------------
+
+-- Add control bit definitions under Ctrl-reg:
+H c_rom     T Bit #c_rom        \ 1 => write protected above #rom-mem
+H c_wp      T Bit #c_wp         \ 1 => eeprom physically write protected
+
+-- Add registers and some constants to the register list
+H EE_ADR_REG    T Register EE-addr     \ 3 register for accessing the E2prom
+H EE_DAT_REG    T Register EE-data     \ These 3 registers have to
+H EE_END_REG    T Register EE-last     \ remain in this order
+
+   prog_addr_width 2** 8 + Constant #boot-size  \ count + program + CRC
+   $20000 #boot-size -     Constant #boot-mem   \ start of program memory image
+   $10000                  Constant #rom-mem    \ write protected above this address using c_rom control bit
+Host
+   Variable EEp              0 EEp  !           \ E2prom pointer of the next free memory cell
+   Variable ROMp  T #rom-mem H ROMp !           \ E2prom pointer of the next free write protected memory cell
+Target
+

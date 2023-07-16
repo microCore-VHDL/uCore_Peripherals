@@ -1,0 +1,298 @@
+
+Add SDRAM_4MBx16.vhd to both the simulator's and the synthesizer's file list.
+Add the three files under ./models to the simulator's file list.
+
+-- ---------------------------------------------------------------------
+-- architecture_pkg(_sim).vhd
+-- ---------------------------------------------------------------------
+
+Adjust the data_addr_width according to the size of the SDRAM.
+On cell architectures, this should be 21, on byte architectures 22, on a
+16 bit architecture it must be 16, because you can only use a fraction
+of the SDRAM capacity.
+
+-- ---------------------------------------------------------------------
+-- fpga.vhd
+-- ---------------------------------------------------------------------
+
+-- add IO-pins to the ENTITY declaration:
+
+   -- SDRAM
+      sd_clk      : OUT   STD_LOGIC;
+      sd_cke      : OUT   STD_LOGIC;
+      sd_cs_n     : OUT   STD_LOGIC;
+      sd_we_n     : OUT   STD_LOGIC;
+      sd_a        : OUT   UNSIGNED(11 DOWNTO 0);
+      sd_ba       : OUT   UNSIGNED( 1 DOWNTO 0);
+      sd_ras_n    : OUT   STD_LOGIC;
+      sd_cas_n    : OUT   STD_LOGIC;
+      sd_ldqm     : OUT   STD_LOGIC;
+      sd_udqm     : OUT   STD_LOGIC;
+      sd_dq       : INOUT UNSIGNED(15 DOWNTO 0);
+
+-- add to declarations:
+
+   COMPONENT SDRAM_4MBx16 PORT (
+      uBus        : IN    uBus_port;
+      delay       : OUT   STD_LOGIC;
+   -- SDRAM
+      sd_ram      : OUT   SDRAM_signals;
+      sd_dq       : INOUT ram_data_bus
+   ); END COMPONENT SDRAM_4MBx16;
+   
+   SIGNAL sd_ram       : SDRAM_signals;
+   SIGNAL ext_rdata    : data_bus;
+   SIGNAL SDRAM_delay  : STD_LOGIC;
+   
+-- add to the body of fpga.vhd:
+
+Under -- clk generation (perhaps a PLL will be used)
+
+   delay <= SDRAM_delay OR <other delay producing signals, if any>;
+
+under -- data memory consisting of dcache, ext_mem, and debugmem
+
+   mem_rdata_proc : PROCESS (uBus, cache_rdata, ext_rdata)
+   BEGIN
+      mem_rdata <= cache_rdata;
+      IF  uBus.ext_en = '1' AND WITH_EXTMEM  THEN
+         mem_rdata <= ext_rdata;
+      END IF;
+   END PROCESS mem_rdata_proc;
+   
+under -- external SDRAM data memory
+
+      SDRAM: SDRAM_4MBx16 PORT MAP (
+      uBus        => uBus,
+      delay       => SDRAM_delay,
+   -- SDRAM
+      sd_ram      => sd_ram,
+      sd_dq       => sd_dq
+   );
+   
+   -- Note: I am ALWAYS using positive logic inside the design.
+   -- Finally, on the top level (fpga.vhd) all the negative logic
+   -- inversions have to be done
+
+   sd_clk    <= clk;
+   sd_cke    <= sd_ram.cke;
+   sd_cs_n   <= NOT sd_ram.cmd(3);
+   sd_ras_n  <= NOT sd_ram.cmd(2);
+   sd_cas_n  <= NOT sd_ram.cmd(1);
+   sd_we_n   <= NOT sd_ram.cmd(0);
+   sd_a      <= sd_ram.addr;
+   sd_ba     <= sd_ram.bank;
+   sd_ldqm   <= NOT sd_ram.byte_en(0);
+   sd_udqm   <= NOT sd_ram.byte_en(1);
+   ext_rdata <= sd_ram.rdata;
+   
+-- ---------------------------------------------------------------------
+-- bench.vhd
+-- ---------------------------------------------------------------------
+
+-- add the SDRAM's IO-pins to the 'COMPONENT fpga' declaration.
+
+-- add to declarations:
+
+   COMPONENT mt48lc4m16 GENERIC (
+       -- tipd delays: interconnect path delays
+       tipd_BA0        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_BA1        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQML       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQMH       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ0        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ1        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ2        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ3        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ4        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ5        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ6        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ7        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ8        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ9        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ10       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ11       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ12       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ13       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ14       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_DQ15       : VitalDelayType01 := VitalZeroDelay01;
+       tipd_CLK        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_CKE        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A0         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A1         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A2         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A3         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A4         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A5         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A6         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A7         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A8         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A9         : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A10        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_A11        : VitalDelayType01 := VitalZeroDelay01;
+       tipd_WENeg      : VitalDelayType01 := VitalZeroDelay01;
+       tipd_RASNeg     : VitalDelayType01 := VitalZeroDelay01;
+       tipd_CSNeg      : VitalDelayType01 := VitalZeroDelay01;
+       tipd_CASNeg     : VitalDelayType01 := VitalZeroDelay01;
+       -- tpd delays  tAC tHZ
+       tpd_CLK_DQ0              : VitalDelayType01Z := UnitDelay01Z; --CL2
+       tpd_CLK_DQ1              : VitalDelayType01Z := UnitDelay01Z; --CL3
+       -- tpw values: pulse widths
+       tpw_CLK_posedge          : VitalDelayType    := UnitDelay; --tCH
+       tpw_CLK_negedge          : VitalDelayType    := UnitDelay; --tCL
+       -- tsetup values: setup times
+       tsetup_A0_CLK            : VitalDelayType    := UnitDelay; --tAS
+       tsetup_DQ0_CLK           : VitalDelayType    := UnitDelay; --tDS
+       tsetup_CKE_CLK           : VitalDelayType    := UnitDelay; --tCKS
+       tsetup_CSNeg_CLK         : VitalDelayType    := UnitDelay; --tCMS
+       -- thold values: hold times
+       thold_A0_CLK             : VitalDelayType    := UnitDelay; --tAH
+       thold_DQ0_CLK            : VitalDelayType    := UnitDelay; --tDH
+       thold_CKE_CLK            : VitalDelayType    := UnitDelay; --tCKH
+       thold_CSNeg_CLK          : VitalDelayType    := UnitDelay; --tCMH
+       -- tperiod_min: minimum clock period = 1/max freq tCK
+       tperiod_CLK              : VitalDelayType    := UnitDelay; --CL2
+       tperiod_CLK_CAS3         : VitalDelayType    := UnitDelay; --CL3
+       -- tdevice values: values for internal delays
+       tdevice_REF              : VitalDelayType    := 15_625 ns;
+       tdevice_TRC              : VitalDelayType    := 66 ns;
+       tdevice_TRCD             : VitalDelayType    := 20 ns;
+       tdevice_TRP              : VitalDelayType    := 20 ns;
+       tdevice_TRCAR            : VitalDelayType    := 66 ns;
+       tdevice_TRAS             : VitalDelayType01  := (42 ns, 120_000 ns);
+       -- tpowerup: Power up initialization time. Data sheets say 100 us.
+       -- May be shortened during simulation debug.
+       tpowerup        : TIME      := 100 us;
+       -- generic control parameters
+       InstancePath    : STRING    := DefaultInstancePath;
+       TimingChecksOn  : BOOLEAN   := DefaultTimingChecks;
+       MsgOn           : BOOLEAN   := DefaultMsgOn;
+       XOn             : BOOLEAN   := DefaultXon;
+       SeverityMode    : SEVERITY_LEVEL := WARNING;
+       -- memory file to be loaded
+       mem_file_name   : STRING    := "none";
+       -- preload variable
+       UserPreload     : BOOLEAN   := FALSE;
+       -- For FMF SDF technology file usage
+       TimingModel     : STRING    := DefaultTimingModel
+   ); PORT (
+       BA0       : IN    STD_LOGIC;
+       BA1       : IN    STD_LOGIC;
+       DQML      : IN    STD_LOGIC;
+       DQMH      : IN    STD_LOGIC;
+       DQ0       : INOUT STD_LOGIC;
+       DQ1       : INOUT STD_LOGIC;
+       DQ2       : INOUT STD_LOGIC;
+       DQ3       : INOUT STD_LOGIC;
+       DQ4       : INOUT STD_LOGIC;
+       DQ5       : INOUT STD_LOGIC;
+       DQ6       : INOUT STD_LOGIC;
+       DQ7       : INOUT STD_LOGIC;
+       DQ8       : INOUT STD_LOGIC;
+       DQ9       : INOUT STD_LOGIC;
+       DQ10      : INOUT STD_LOGIC;
+       DQ11      : INOUT STD_LOGIC;
+       DQ12      : INOUT STD_LOGIC;
+       DQ13      : INOUT STD_LOGIC;
+       DQ14      : INOUT STD_LOGIC;
+       DQ15      : INOUT STD_LOGIC;
+       CLK       : IN    STD_LOGIC;
+       CKE       : IN    STD_LOGIC;
+       A0        : IN    STD_LOGIC;
+       A1        : IN    STD_LOGIC;
+       A2        : IN    STD_LOGIC;
+       A3        : IN    STD_LOGIC;
+       A4        : IN    STD_LOGIC;
+       A5        : IN    STD_LOGIC;
+       A6        : IN    STD_LOGIC;
+       A7        : IN    STD_LOGIC;
+       A8        : IN    STD_LOGIC;
+       A9        : IN    STD_LOGIC;
+       A10       : IN    STD_LOGIC;
+       A11       : IN    STD_LOGIC;
+       WENeg     : IN    STD_LOGIC;
+       RASNeg    : IN    STD_LOGIC;
+       CSNeg     : IN    STD_LOGIC;
+       CASNeg    : IN    STD_LOGIC
+   ); END COMPONENT mt48lc4m16;
+   
+   SIGNAL sd_clk       : STD_LOGIC;
+   SIGNAL sd_cke       : STD_LOGIC;
+   SIGNAL sd_cs_n      : STD_LOGIC;
+   SIGNAL sd_we_n      : STD_LOGIC;
+   SIGNAL sd_a         : UNSIGNED(11 DOWNTO 0);
+   SIGNAL sd_ba        : UNSIGNED( 1 DOWNTO 0);
+   SIGNAL sd_ras_n     : STD_LOGIC;
+   SIGNAL sd_cas_n     : STD_LOGIC;
+   SIGNAL sd_ldqm      : STD_LOGIC;
+   SIGNAL sd_udqm      : STD_LOGIC;
+   SIGNAL sd_dq        : UNSIGNED(15 DOWNTO 0);
+
+-- add to the body:
+   
+   -- ---------------------------------------------------------------------
+   -- external SDRAM
+   -- ---------------------------------------------------------------------
+   
+   SDRAM: mt48lc4m16 GENERIC MAP (
+       -- modified for short simulation and HY57V641620F
+       tdevice_TRC   => 63 ns,
+       tdevice_TRCAR => 63 ns,
+       tpd_CLK_DQ0   => (OTHERS => 6 ns),
+       tpowerup      => 10 us             -- make simulation quicker!
+   ) PORT MAP (
+       BA0      => sd_ba(0),
+       BA1      => sd_ba(1),
+       DQML     => sd_ldqm,
+       DQMH     => sd_udqm,
+       DQ0      => std_logic(sd_dq( 0)),
+       DQ1      => std_logic(sd_dq( 1)),
+       DQ2      => std_logic(sd_dq( 2)),
+       DQ3      => std_logic(sd_dq( 3)),
+       DQ4      => std_logic(sd_dq( 4)),
+       DQ5      => std_logic(sd_dq( 5)),
+       DQ6      => std_logic(sd_dq( 6)),
+       DQ7      => std_logic(sd_dq( 7)),
+       DQ8      => std_logic(sd_dq( 8)),
+       DQ9      => std_logic(sd_dq( 9)),
+       DQ10     => std_logic(sd_dq(10)),
+       DQ11     => std_logic(sd_dq(11)),
+       DQ12     => std_logic(sd_dq(12)),
+       DQ13     => std_logic(sd_dq(13)),
+       DQ14     => std_logic(sd_dq(14)),
+       DQ15     => std_logic(sd_dq(15)),
+       CLK      => sd_clk,
+       CKE      => sd_cke,
+       A0       => std_logic(sd_a( 0)),
+       A1       => std_logic(sd_a( 1)),
+       A2       => std_logic(sd_a( 2)),
+       A3       => std_logic(sd_a( 3)),
+       A4       => std_logic(sd_a( 4)),
+       A5       => std_logic(sd_a( 5)),
+       A6       => std_logic(sd_a( 6)),
+       A7       => std_logic(sd_a( 7)),
+       A8       => std_logic(sd_a( 8)),
+       A9       => std_logic(sd_a( 9)),
+       A10      => std_logic(sd_a(10)),
+       A11      => std_logic(sd_a(11)),
+       WENeg    => sd_we_n,
+       RASNeg   => sd_ras_n,
+       CSNeg    => sd_cs_n,
+       CASNeg   => sd_cas_n
+   );
+   
+-- add to the body's fpga instanciation:
+   
+   -- SDRAM
+      sd_clk     => sd_clk,
+      sd_cke     => sd_cke,
+      sd_cs_n    => sd_cs_n,
+      sd_we_n    => sd_we_n,
+      sd_a       => sd_a,
+      sd_ba      => sd_ba,
+      sd_ras_n   => sd_ras_n,
+      sd_cas_n   => sd_cas_n,
+      sd_ldqm    => sd_ldqm,
+      sd_udqm    => sd_udqm,
+      sd_dq      => sd_dq,
+
